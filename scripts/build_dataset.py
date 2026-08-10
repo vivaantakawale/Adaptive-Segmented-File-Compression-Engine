@@ -1,175 +1,236 @@
-"""Binary layout for encoder's archive container (SZE1)
+#!/usr/bin/env python
+"""Build labeled training dataset from corpus of files
 
-Separate from src/archive/format.py's .szip (older pipeline)
-Carries per-chunk checksum to decoder to verify each chunk independently
+For every file under --corpus: 
+chunk it, extract features per chunk, brute force label each chunk with best performing algorithm, 
+write results to labeled dataset (--out)
 
-Layout:
+Default chunker is fixed_size; 
+content_aware is available via --chunker for corpora with mixed content types within files
 
-    --- header (fixed size, see `_HEADER`) ---
-    MAGIC (4 bytes)              b"SZE1"
-    version (uint8)
-    original_size (uint64, BE)   size of original (unchunked) file
-    original_checksum (32 bytes) SHA-256 digest of original file
-    chunk_count (uint32, BE)
-
-    --- chunk metadata table (chunk_count fixed-size entries) ---
-    per entry:
-        algorithm_id (uint8)       index into src.compressors.registry.ALGORITHM_NAMES
-        original_length (uint32, BE)
-        compressed_length (uint32, BE)
-        checksum (32 bytes)        SHA-256 of this chunk's original bytes
-        payload_offset (uint64, BE) byte offset of this chunk's payload relative to start of payload blob
-
-    --- payload blob ---
-    concatenated compressed bytes of every chunk, in same order as metadata table
-
-Metadata is fully separated from payload bytes so whole table can be read and validated before touching any payload bytes
+Resumable: each file's rows written to own shard under --shard-dir once fully labeled (atomic write), so crash only costs the file in flight 
+Re-running skips files that already have a shard
 """
 
-import struct
-from dataclasses import dataclass
+import argparse
+import os
+import time
+from pathlib import Path
 
-from src.compressors.registry import ALGORITHM_NAMES
+import pandas as pd
 
-MAGIC = b"SZE1"
-VERSION = 1
-CHECKSUM_SIZE = 32  # sha256 digest length
+from src.chunking import content_aware, fixed_size
+from src.features.extract import extract
+from src.labeling.brute_force_label import label_chunk
 
-
-class ArchiveError(ValueError):
-    """Raised when archive is malformed, truncated, or fails integrity verification (checksum mismatch or chunk fails to decompress)"""
-
-
-# magic, version, original_size, original_checksum, chunk_count
-_HEADER = struct.Struct(f">4sBQ{CHECKSUM_SIZE}sI")
-
-# algorithm_id, original_length, compressed_length, checksum, payload_offset
-_CHUNK_META = struct.Struct(f">BII{CHECKSUM_SIZE}sQ")
+VALID_SUFFIXES = (".parquet", ".csv")
 
 
-@dataclass
-class ArchiveHeader:
-    version: int
-    original_size: int
-    original_checksum: bytes
-    chunk_count: int
+def shard_path_for(source_file: Path, corpus_dir: Path, shard_dir: Path, suffix: str) -> Path:
+    """Compute shard file path for source file
+
+    Args:
+        source_file: File the shard covers
+        corpus_dir: Root corpus directory `source_file` lives under
+        shard_dir: Directory shards are written to
+        suffix: Shard file extension, ".parquet" or ".csv"
+
+    Returns:
+        Shard path, unique per source file
+    """
+    rel = source_file.relative_to(corpus_dir)
+    safe_name = str(rel).replace(os.sep, "__")
+    return shard_dir / f"{safe_name}{suffix}"
 
 
-@dataclass
-class ChunkMeta:
-    algorithm_id: int
-    original_length: int
-    compressed_length: int
-    checksum: bytes
-    payload_offset: int
+def _chunk_data(data: bytes, chunker: str, chunk_size: int) -> list[bytes]:
+    if chunker == "fixed_size":
+        return list(fixed_size.chunk(data, chunk_size=chunk_size))
+    if chunker == "content_aware":
+        return list(content_aware.chunk(data))
+    raise ValueError(f"unknown chunker: {chunker}")
 
 
-def header_size() -> int:
-    """Return fixed size of acked archive header in bytes"""
-    return _HEADER.size
+def build_rows_for_file(
+    file_path: Path, chunker: str = "fixed_size", chunk_size: int = fixed_size.DEFAULT_CHUNK_SIZE
+) -> list[dict]:
+    """Chunk and brute force label every chunk of one file
+
+    Args:
+        file_path: File to process
+        chunker: "fixed_size" or "content_aware"
+        chunk_size: Chunk size in bytes (fixed_size only)
+
+    Returns:
+        One row (dict) per chunk: features, brute-force label, per-algorithm sizes/times, source file path
+    """
+    data = file_path.read_bytes()
+    rows = []
+    for chunk_bytes in _chunk_data(data, chunker, chunk_size):
+        if not chunk_bytes:
+            continue
+        features = extract(chunk_bytes)
+        label = label_chunk(chunk_bytes)
+        row = dict(features)
+        row["best_algorithm"] = label.best_algorithm
+        row["best_size"] = label.best_size
+        for algo, size in label.sizes.items():
+            row[f"size_{algo}"] = size
+        for algo, seconds in label.times.items():
+            row[f"time_{algo}"] = seconds
+        row["source_file"] = str(file_path)
+        rows.append(row)
+    return rows
 
 
-def chunk_meta_size() -> int:
-    """Return fixed size of one packed chunk metadata entry in bytes"""
-    return _CHUNK_META.size
+def _write_table(df: pd.DataFrame, path: Path, suffix: str) -> None:
+    if suffix == ".parquet":
+        df.to_parquet(path, index=False)
+    else:
+        df.to_csv(path, index=False)
 
 
-def metadata_table_offset() -> int:
-    """Return byte offset where chunk metadata table begins"""
-    return header_size()
+def _read_table(path: Path, suffix: str) -> pd.DataFrame:
+    if suffix == ".parquet":
+        return pd.read_parquet(path)
+    return pd.read_csv(path)
 
 
-def payload_blob_offset(chunk_count: int) -> int:
-    """Return byte offset where payload blob begins, given `chunk_count`"""
-    return header_size() + chunk_count * chunk_meta_size()
+def write_shard(rows: list[dict], shard_path: Path, suffix: str) -> None:
+    """Write shard atomically: build under .tmp name then rename into place
+
+    Args:
+        rows: Rows to write, as produced by `build_rows_for_file`
+        shard_path: Destination path
+        suffix: File format - ".parquet" or ".csv"
+    """
+    shard_path.parent.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame(rows)
+    tmp_path = shard_path.with_name(shard_path.name + ".tmp")
+    _write_table(df, tmp_path, suffix)
+    os.replace(tmp_path, shard_path)  # atomic on POSIX and Windows (same filesystem)
 
 
-def pack_header(original_size: int, original_checksum: bytes, chunk_count: int) -> bytes:
-    """Serialize archive header
-    Raises ValueError if `original_checksum` isn't CHECKSUM_SIZE bytes"""
-    if len(original_checksum) != CHECKSUM_SIZE:
-        raise ValueError(
-            f"original_checksum must be {CHECKSUM_SIZE} bytes, got {len(original_checksum)}"
-        )
-    return _HEADER.pack(MAGIC, VERSION, original_size, original_checksum, chunk_count)
+def merge_shards(shard_dir: Path, suffix: str) -> pd.DataFrame:
+    """Concatenate every shard in directory into one dataset
+
+    Args:
+        shard_dir: Directory containing shard files
+        suffix: Shard file extension - ".parquet" or ".csv"
+
+    Returns:
+        Combined DataFrame of all shards' rows
+        Empty if none found
+    """
+    shard_files = sorted(p for p in shard_dir.glob(f"*{suffix}") if not p.name.endswith(".tmp"))
+    frames = [_read_table(p, suffix) for p in shard_files]
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True)
 
 
-def unpack_header(buf: bytes, offset: int = 0) -> ArchiveHeader:
-    """Parse an archive header from `buf` at `offset`
-    Raises ArchiveError if truncated or magic doesn't match"""
-    if len(buf) < offset + _HEADER.size:
-        raise ArchiveError("truncated archive: header incomplete")
-    magic, version, original_size, original_checksum, chunk_count = _HEADER.unpack_from(
-        buf, offset
+def build_dataset(
+    corpus_dir: Path,
+    out_path: Path,
+    shard_dir: Path,
+    force: bool = False,
+    chunker: str = "fixed_size",
+    chunk_size: int = fixed_size.DEFAULT_CHUNK_SIZE,
+) -> pd.DataFrame:
+    """Build or resume labeled dataset from corpus of files
+
+    Args:
+        corpus_dir: Directory of input files to label (recursive)
+        out_path: Combined output dataset path - .parquet or .csv
+        shard_dir: Per-file shard directory
+        force: If True, reprocess files even if shard already exists
+        chunker: "fixed_size" or "content_aware"
+        chunk_size: Chunk size in bytes (fixed_size only)
+
+    Returns:
+        Combined labeled dataset (also written to `out_path`)
+
+    Raises:
+        ValueError: If `corpus_dir` contains no files
+    """
+    suffix = out_path.suffix if out_path.suffix in VALID_SUFFIXES else ".parquet"
+    files = sorted(p for p in corpus_dir.rglob("*") if p.is_file() and p.name != ".gitkeep")
+    if not files:
+        raise ValueError(f"no files found under {corpus_dir}")
+
+    skipped = 0
+    processed = 0
+    failed: list[tuple[Path, str]] = []
+    for i, file_path in enumerate(files, 1):
+        shard_path = shard_path_for(file_path, corpus_dir, shard_dir, suffix)
+        if shard_path.exists() and not force:
+            print(f"[{i}/{len(files)}] skip {file_path.name} (already labeled)")
+            skipped += 1
+            continue
+        print(f"[{i}/{len(files)}] labeling {file_path.name} ...")
+        start = time.perf_counter()
+        try:
+            rows = build_rows_for_file(file_path, chunker=chunker, chunk_size=chunk_size)
+            write_shard(rows, shard_path, suffix)
+        except Exception as e:
+            print(f"    FAILED: {e}")
+            failed.append((file_path, str(e)))
+            continue
+        elapsed = time.perf_counter() - start
+        print(f"    {len(rows)} chunks in {elapsed:.2f}s -> {shard_path}")
+        processed += 1
+
+    df = merge_shards(shard_dir, suffix)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    _write_table(df, out_path, suffix)
+    print(
+        f"Done: {processed} file(s) processed, {skipped} skipped (already labeled), "
+        f"{len(failed)} failed. Wrote {len(df)} labeled chunks to {out_path}"
     )
-    if magic != MAGIC:
-        raise ArchiveError(f"not a recognized archive (bad magic: {magic!r})")
-    return ArchiveHeader(
-        version=version,
-        original_size=original_size,
-        original_checksum=original_checksum,
-        chunk_count=chunk_count,
+    if failed:
+        print("Failed files:")
+        for path, err in failed:
+            print(f"  {path}: {err}")
+    return df
+
+
+def main() -> None:
+    """CLI entry point. Parses sys.argv and runs `build_dataset`"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--corpus", type=Path, default=Path("data/raw"), help="Directory of input files")
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=Path("data/labeled/dataset.parquet"),
+        help="Combined output dataset path - .parquet or .csv",
+    )
+    parser.add_argument(
+        "--shard-dir",
+        type=Path,
+        default=None,
+        help="Per-file shard directory (default: <out dir>/.shards)",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Reprocess files even if shard already exists"
+    )
+    parser.add_argument(
+        "--chunker", choices=["fixed_size", "content_aware"], default="fixed_size"
+    )
+    parser.add_argument(
+        "--chunk-size", type=int, default=fixed_size.DEFAULT_CHUNK_SIZE, help="fixed_size chunker only"
+    )
+    args = parser.parse_args()
+
+    shard_dir = args.shard_dir or (args.out.parent / ".shards")
+    build_dataset(
+        args.corpus,
+        args.out,
+        shard_dir,
+        force=args.force,
+        chunker=args.chunker,
+        chunk_size=args.chunk_size,
     )
 
 
-def pack_chunk_meta(
-    algorithm_id: int,
-    original_length: int,
-    compressed_length: int,
-    checksum: bytes,
-    payload_offset: int,
-) -> bytes:
-    """Serialize one chunk-metadata entry
-    Raises ValueError if `checksum` isn't CHECKSUM_SIZE bytes"""
-    if len(checksum) != CHECKSUM_SIZE:
-        raise ValueError(f"checksum must be {CHECKSUM_SIZE} bytes, got {len(checksum)}")
-    return _CHUNK_META.pack(
-        algorithm_id, original_length, compressed_length, checksum, payload_offset
-    )
-
-
-def unpack_chunk_meta(buf: bytes, offset: int) -> ChunkMeta:
-    """Parse one chunk metadata entry from `buf` at `offset`
-    Raises ArchiveError if truncated"""
-    if len(buf) < offset + _CHUNK_META.size:
-        raise ArchiveError("truncated archive: chunk metadata incomplete")
-    algorithm_id, original_length, compressed_length, checksum, payload_offset = (
-        _CHUNK_META.unpack_from(buf, offset)
-    )
-    return ChunkMeta(
-        algorithm_id=algorithm_id,
-        original_length=original_length,
-        compressed_length=compressed_length,
-        checksum=checksum,
-        payload_offset=payload_offset,
-    )
-
-
-def registry_index(algorithm_name: str) -> int:
-    """Map algorithm name to its stable disk id"""
-    return ALGORITHM_NAMES.index(algorithm_name)
-
-
-def registry_name(algorithm_id: int) -> str:
-    """Map disk algorithm id back to its name"""
-    return ALGORITHM_NAMES[algorithm_id]
-
-
-__all__ = [
-    "MAGIC",
-    "VERSION",
-    "CHECKSUM_SIZE",
-    "ArchiveError",
-    "ArchiveHeader",
-    "ChunkMeta",
-    "header_size",
-    "chunk_meta_size",
-    "metadata_table_offset",
-    "payload_blob_offset",
-    "pack_header",
-    "unpack_header",
-    "pack_chunk_meta",
-    "unpack_chunk_meta",
-    "registry_index",
-    "registry_name",
-]
+if __name__ == "__main__":
+    main()
