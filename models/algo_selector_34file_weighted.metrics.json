@@ -1,0 +1,245 @@
+{
+  "split_sizes": {
+    "train": 3533,
+    "val": 756,
+    "test": 756
+  },
+  "val": {
+    "accuracy": 0.9140211640211641,
+    "labels": [
+      "brotli",
+      "bzip2",
+      "gzip",
+      "lzma",
+      "store",
+      "zstd"
+    ],
+    "classification_report": {
+      "brotli": {
+        "precision": 0.9445438282647585,
+        "recall": 0.9411764705882353,
+        "f1-score": 0.9428571428571428,
+        "support": 561.0
+      },
+      "bzip2": {
+        "precision": 0.7692307692307693,
+        "recall": 0.7476635514018691,
+        "f1-score": 0.7582938388625592,
+        "support": 107.0
+      },
+      "gzip": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 1.0
+      },
+      "lzma": {
+        "precision": 0.84375,
+        "recall": 0.9473684210526315,
+        "f1-score": 0.8925619834710744,
+        "support": 57.0
+      },
+      "store": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 22.0
+      },
+      "zstd": {
+        "precision": 1.0,
+        "recall": 0.875,
+        "f1-score": 0.9333333333333333,
+        "support": 8.0
+      },
+      "accuracy": 0.9140211640211641,
+      "macro avg": {
+        "precision": 0.7595874329159212,
+        "recall": 0.751868073840456,
+        "f1-score": 0.7545077164206849,
+        "support": 756.0
+      },
+      "weighted avg": {
+        "precision": 0.9130827115928859,
+        "recall": 0.9140211640211641,
+        "f1-score": 0.9132579333672869,
+        "support": 756.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        528,
+        24,
+        0,
+        9,
+        0,
+        0
+      ],
+      [
+        27,
+        80,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        0,
+        0,
+        54,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        22,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        1,
+        0,
+        7
+      ]
+    ]
+  },
+  "test": {
+    "accuracy": 0.9232804232804233,
+    "labels": [
+      "brotli",
+      "bzip2",
+      "gzip",
+      "lzma",
+      "store",
+      "zstd"
+    ],
+    "classification_report": {
+      "brotli": {
+        "precision": 0.9373913043478261,
+        "recall": 0.9607843137254902,
+        "f1-score": 0.948943661971831,
+        "support": 561.0
+      },
+      "bzip2": {
+        "precision": 0.8351648351648352,
+        "recall": 0.7102803738317757,
+        "f1-score": 0.7676767676767676,
+        "support": 107.0
+      },
+      "gzip": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 1.0
+      },
+      "lzma": {
+        "precision": 0.8983050847457628,
+        "recall": 0.9298245614035088,
+        "f1-score": 0.9137931034482759,
+        "support": 57.0
+      },
+      "store": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 22.0
+      },
+      "zstd": {
+        "precision": 0.8888888888888888,
+        "recall": 1.0,
+        "f1-score": 0.9411764705882353,
+        "support": 8.0
+      },
+      "accuracy": 0.9232804232804233,
+      "macro avg": {
+        "precision": 0.7599583521912189,
+        "recall": 0.7668148748267957,
+        "f1-score": 0.7619316672808516,
+        "support": 756.0
+      },
+      "weighted avg": {
+        "precision": 0.9200445238669147,
+        "recall": 0.9232804232804233,
+        "f1-score": 0.9207862793239007,
+        "support": 756.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        539,
+        15,
+        0,
+        6,
+        0,
+        1
+      ],
+      [
+        31,
+        76,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        4,
+        0,
+        0,
+        53,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        22,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        0,
+        8
+      ]
+    ]
+  },
+  "compression_ratio": {
+    "model": 2.885559781117154,
+    "always_zstd": 2.721012464349847,
+    "brute_force_ceiling": 2.8881479737418925
+  },
+  "registry_algorithms": [
+    "store",
+    "gzip",
+    "bzip2",
+    "lzma",
+    "zstd",
+    "brotli"
+  ],
+  "class_weight": "balanced"
+}

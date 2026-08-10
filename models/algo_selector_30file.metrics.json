@@ -1,0 +1,205 @@
+{
+  "split_sizes": {
+    "train": 1079,
+    "val": 231,
+    "test": 231
+  },
+  "val": {
+    "accuracy": 0.9393939393939394,
+    "labels": [
+      "brotli",
+      "bzip2",
+      "lzma",
+      "store",
+      "zstd"
+    ],
+    "classification_report": {
+      "brotli": {
+        "precision": 0.9425287356321839,
+        "recall": 0.9010989010989011,
+        "f1-score": 0.9213483146067416,
+        "support": 91.0
+      },
+      "bzip2": {
+        "precision": 0.9833333333333333,
+        "recall": 1.0,
+        "f1-score": 0.9915966386554622,
+        "support": 59.0
+      },
+      "lzma": {
+        "precision": 0.8709677419354839,
+        "recall": 0.9473684210526315,
+        "f1-score": 0.907563025210084,
+        "support": 57.0
+      },
+      "store": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 22.0
+      },
+      "zstd": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 2.0
+      },
+      "accuracy": 0.9393939393939394,
+      "macro avg": {
+        "precision": 0.7593659621802002,
+        "recall": 0.7696934644303065,
+        "f1-score": 0.7641015956944576,
+        "support": 231.0
+      },
+      "weighted avg": {
+        "precision": 0.9326058134178268,
+        "recall": 0.9393939393939394,
+        "f1-score": 0.9354025573457168,
+        "support": 231.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        82,
+        1,
+        8,
+        0,
+        0
+      ],
+      [
+        0,
+        59,
+        0,
+        0,
+        0
+      ],
+      [
+        3,
+        0,
+        54,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        22,
+        0
+      ],
+      [
+        2,
+        0,
+        0,
+        0,
+        0
+      ]
+    ]
+  },
+  "test": {
+    "accuracy": 0.8961038961038961,
+    "labels": [
+      "brotli",
+      "bzip2",
+      "lzma",
+      "store",
+      "zstd"
+    ],
+    "classification_report": {
+      "brotli": {
+        "precision": 0.8863636363636364,
+        "recall": 0.8571428571428571,
+        "f1-score": 0.8715083798882681,
+        "support": 91.0
+      },
+      "bzip2": {
+        "precision": 0.9047619047619048,
+        "recall": 0.9661016949152542,
+        "f1-score": 0.9344262295081968,
+        "support": 59.0
+      },
+      "lzma": {
+        "precision": 0.8620689655172413,
+        "recall": 0.8771929824561403,
+        "f1-score": 0.8695652173913043,
+        "support": 57.0
+      },
+      "store": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 22.0
+      },
+      "zstd": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "f1-score": 0.0,
+        "support": 2.0
+      },
+      "accuracy": 0.8961038961038961,
+      "macro avg": {
+        "precision": 0.7306389013285565,
+        "recall": 0.7400875069028503,
+        "f1-score": 0.7350999653575538,
+        "support": 231.0
+      },
+      "weighted avg": {
+        "precision": 0.8882163390672123,
+        "recall": 0.8961038961038961,
+        "f1-score": 0.8917905952472743,
+        "support": 231.0
+      }
+    },
+    "confusion_matrix": [
+      [
+        78,
+        6,
+        7,
+        0,
+        0
+      ],
+      [
+        2,
+        57,
+        0,
+        0,
+        0
+      ],
+      [
+        7,
+        0,
+        50,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        22,
+        0
+      ],
+      [
+        1,
+        0,
+        1,
+        0,
+        0
+      ]
+    ]
+  },
+  "compression_ratio": {
+    "model": 2.6579494427555375,
+    "always_zstd": 2.5052979759667835,
+    "brute_force_ceiling": 2.6617644964785825
+  },
+  "registry_algorithms": [
+    "store",
+    "gzip",
+    "bzip2",
+    "lzma",
+    "zstd",
+    "brotli"
+  ],
+  "class_weight": null
+}
